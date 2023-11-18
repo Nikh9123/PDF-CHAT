@@ -4,21 +4,23 @@ import React from 'react'
 import { Inbox, Loader2 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { uploadToS3 } from '@/lib/s3';
+import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
 const FileUpload = () => {
+  const router = useRouter();
   const [uploading, setUploading] = React.useState(false);
 
   //useMutation hook is used to make the request to the backend in react-query
-  const { mutate, isSuccess } = useMutation({
+  const { mutate, isPending } = useMutation({
     mutationFn: async (
       { file_key, file_name }:
         {
           file_key: string; file_name: string;
         }) => {
-          
+
       //make the request to the backend
       const response = await axios.post('/api/create-chat', {
         file_key,
@@ -53,9 +55,10 @@ const FileUpload = () => {
         }
         //call the mutate function 
         mutate(data, {
-          onSuccess: (data) => {
-            console.log("pages from fileUpload : ", data);
+          onSuccess: ({ chat_id }) => {
+            console.log("pages from fileUpload : ", chat_id);
             toast.success("Chat created successfully");
+            router.push(`/chat/${chat_id}`);
           },
           onError: (error) => {
             toast.error("Error creating chats");
@@ -77,7 +80,7 @@ const FileUpload = () => {
         className: "border-dashed border-2 rounded-xl bg-gray-50 cursor-pointer py-8 flex justify-center items-center flex-col"
       })}>
         <input {...getInputProps} />
-        {uploading? (
+        {uploading || isPending ? (
           <>
             {/*show a loader */}
             <Loader2 className='w-10 h-10 text-blue-500 animate-spin' />

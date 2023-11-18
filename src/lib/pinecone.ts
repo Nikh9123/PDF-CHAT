@@ -1,10 +1,13 @@
-import { Pinecone, PineconeClient } from "@pinecone-database/pinecone";
+import { Pinecone, PineconeClient, Vector, utils as PineconeUtils } from "@pinecone-database/pinecone";
 import { downloadFromS3 } from "./s3-server";
+import md5 from "md5";
 import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 import {
 	Document,
 	RecursiveCharacterTextSplitter,
 } from "@pinecone-database/doc-splitter";
+import { getEmbeddings } from "./embeddings";
+import { convertToAscii } from "./utils";
 
 //create pinconde client instance because we need to use it in multiple places
 let pinecone: PineconeClient | null = null;
@@ -42,31 +45,55 @@ export async function loadS3intoPinecone(fileKey: string) {
 	const loader = new PDFLoader(file_name);
 	const pages = (await loader.load()) as PDFPage[];
 
-	//2. split and segment the pdf into chunks using langchain(pdfLoader)
+	//*2. split and segment the pdf into chunks using langchain(pdfLoader)
 	//pages = Array(13)
-  const document = await Promise.all(
-		pages.map((page) => prepareDocument(page))
+  //pages.map((page) => prepareDocument(page)) is same as pages.map(prepareDocument)
+	const document = await Promise.all(pages.map(prepareDocument)
 	);
-  //document = Array(1000) after splitting
+	//document = Array(1000) after splitting
 
-  //*3. vectories amd embed individual documents
+	//*3. vectories amd embed individual documents
+  const vectors = await Promise.all(document.flat().map(embedDocuments))
+
+  //*4. upload the vectors to pinecone
+  const client = await getPineconeClient();
+  const pineconeIndex = client.Index('chatpdf');
+
+  console.log("vectors", vectors);
+  console.log("inserting the vectors into pinecone...🟡");
+
+  const namespace = convertToAscii(fileKey);
+
+  PineconeUtils.chunkedUpsert(pineconeIndex,vectors,'',10);
+
+  return document[0] ;
 
 }
 
-
-// async function embedDocuments(documents: Document[]) {
-
-// }
-
-
-
+async function embedDocuments(doc: Document) {
+	try {
+		const embeddings = await getEmbeddings(doc.pageContent);
+		const hash = md5(doc.pageContent);
+		return {
+			id: hash,
+			values: embeddings,
+			metadata: {
+				text: doc.metadata.text,
+				pageNumber: doc.metadata.pageNumber,
+			},
+		} as Vector;
+	} catch (error) {
+		console.log("❌ Error in embedDocuments in pinecode.ts :  ", error);
+		throw error;
+	}
+}
 
 //split the page into chunks of text
 export const truncateStringByBytes = (str: string, bytes: number) => {
-  const enc = new TextEncoder();
+	const enc = new TextEncoder();
 
-  //decode the string and slice it by bytes
-  return new TextDecoder().decode(enc.encode(str).slice(0, bytes));
+	//decode the string and slice it by bytes
+	return new TextDecoder().decode(enc.encode(str).slice(0, bytes));
 };
 
 //*2. split the pages more further and prepare the document for search
