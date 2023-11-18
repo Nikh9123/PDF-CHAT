@@ -54,7 +54,8 @@ const FileUpload = () => {
         //call the mutate function 
         mutate(data, {
           onSuccess: (data) => {
-            toast.success(data.message);
+            console.log("pages from fileUpload : ", data);
+            toast.success("Chat created successfully");
           },
           onError: (error) => {
             toast.error("Error creating chats");
