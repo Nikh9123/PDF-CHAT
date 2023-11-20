@@ -1,33 +1,28 @@
-import { Pinecone, PineconeClient, Vector, utils as PineconeUtils } from "@pinecone-database/pinecone";
+import { Pinecone, PineconeRecord } from "@pinecone-database/pinecone";
 import { downloadFromS3 } from "./s3-server";
-import md5 from "md5";
 import { PDFLoader } from "langchain/document_loaders/fs/pdf";
+import md5 from "md5";
 import {
-	Document,
-	RecursiveCharacterTextSplitter,
+  Document,
+  RecursiveCharacterTextSplitter,
 } from "@pinecone-database/doc-splitter";
 import { getEmbeddings } from "./embeddings";
 import { convertToAscii } from "./utils";
 
 //create pinconde client instance because we need to use it in multiple places
-let pinecone: PineconeClient | null = null;
 
 export const getPineconeClient = async () => {
-	if (!pinecone) {
-		pinecone = new PineconeClient();
-		await pinecone.init({
-			environment: process.env.PINECONE_ENVIRONMENT!,
-			apiKey: process.env.PINECONE_API_KEY!,
-		});
-	}
-	return pinecone;
+	return new Pinecone({
+		apiKey: process.env.PINECONE_APIKEY!,
+		environment: process.env.PINECONE_ENVIRONMENT!,
+	})
 };
 
 type PDFPage = {
 	pageContent: string;
 	pageNumber: number;
 	metadata: {
-		loc: { pageNumber: number };
+		loc: { pageNumber: number; fileKey: string };
 	};
 };
 
@@ -43,17 +38,18 @@ export async function loadS3intoPinecone(fileKey: string) {
 
 	//divide the pdf into pages
 	const loader = new PDFLoader(file_name);
+	console.log("loading the pdf into our system...🟡", loader);
 	const pages = (await loader.load()) as PDFPage[];
 
 	//*2. split and segment the pdf into chunks using langchain(pdfLoader)
 	//pages = Array(13)
   //pages.map((page) => prepareDocument(page)) is same as pages.map(prepareDocument)
-	const document = await Promise.all(pages.map(prepareDocument)
+	const documents = await Promise.all(pages.map(prepareDocument)
 	);
 	//document = Array(1000) after splitting
 
 	//*3. vectories amd embed individual documents
-  const vectors = await Promise.all(document.flat().map(embedDocuments))
+  const vectors = await Promise.all(documents.flat().map(embedDocuments))
 
   //*4. upload the vectors to pinecone
   const client = await getPineconeClient();
@@ -62,11 +58,13 @@ export async function loadS3intoPinecone(fileKey: string) {
   console.log("vectors", vectors);
   console.log("inserting the vectors into pinecone...🟡");
 
-  const namespace = convertToAscii(fileKey);
+  const namespace = pineconeIndex.namespace(convertToAscii(fileKey));
 
-  PineconeUtils.chunkedUpsert(pineconeIndex,vectors,'',10);
+	console.log("inserting vectors into pinecone");
+  await namespace.upsert(vectors);
 
-  return document[0] ;
+	console.log("inserted vectors into pinecone...🟢");
+  return documents[0];
 
 }
 
@@ -81,7 +79,7 @@ async function embedDocuments(doc: Document) {
 				text: doc.metadata.text,
 				pageNumber: doc.metadata.pageNumber,
 			},
-		} as Vector;
+		} as PineconeRecord;
 	} catch (error) {
 		console.log("❌ Error in embedDocuments in pinecode.ts :  ", error);
 		throw error;

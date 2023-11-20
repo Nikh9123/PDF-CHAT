@@ -6,17 +6,29 @@ import { Button } from './ui/button'
 import { Send } from 'lucide-react'
 import MessageList from './MessageList'
 
-type Props = {}
+type Props = {chatId: number}
 
-const ChatComponent = (props: Props) => {
+const ChatComponent = ({chatId}: Props) => {
   const { messages, input, handleInputChange, handleSubmit } = useChat({
-    api: '/api/chat'
+    api: '/api/chat',
+    body:{
+      chatId
+    }
   });
+  
+  React.useEffect(()=>{
+    const messageContainer = document.getElementById('message-container');
+    messageContainer?.scrollTo({
+      top: messageContainer.scrollHeight,
+      behavior: 'smooth'
+    });
+  })
+
   return (
-    <div className='relative max-h-screen overflow-scroll'>
+    <div className='relative max-h-screen overflow-scroll' id='message-container'>
       {/* header */}
       <div className='sticky top-0 inset-x-0 p-2 bg-white h-fit'>
-        <h3 className='text-xl font-bold'>Chat</h3>
+        <h3 className='text-xl font-bold'>Chat With PDF</h3>
       </div>
       {/* message lists */}
       <MessageList messages={messages}/>
